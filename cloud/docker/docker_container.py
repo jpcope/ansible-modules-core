@@ -1359,46 +1359,49 @@ class Container(DockerBaseClass):
 
         connected_networks = self.container['NetworkSettings']['Networks']
         for network in self.parameters.networks:
-            if connected_networks.get(network['name'], None) is None:
+            existing_network = connected_networks.get(network['name'], None)
+            if existing_network is None:
                 different = True
                 differences.append(dict(
                     parameter=network,
                     container=None
                 ))
-            else:
-                diff = False
-                if network.get('ipv4_address') and network['ipv4_address'] != connected_networks[network['name']].get('IPAddress'):
-                    diff = True
-                if network.get('ipv6_address') and network['ipv6_address'] != connected_networks[network['name']].get('GlobalIPv6Address'):
-                    diff = True
-                if network.get('aliases') and not connected_networks[network['name']].get('Aliases'):
-                    diff = True
-                if network.get('aliases') and connected_networks[network['name']].get('Aliases'):
-                    for alias in network.get('aliases'):
-                        if alias not in connected_networks[network['name']].get('Aliases', []):
-                            diff = True
-                if network.get('links') and not connected_networks[network['name']].get('Links'):
-                    diff = True
-                if network.get('links') and connected_networks[network['name']].get('Links'):
-                    expected_links = []
-                    for link, alias in network['links'].iteritems():
-                        expected_links.append("%s:%s" % (link, alias))
-                    for link in expected_links:
-                        if link not in connected_networks[network['name']].get('Links', []):
-                            diff = True
-                if diff:
-                    different = True
-                    differences.append(dict(
-                        parameter=network,
-                        container=dict(
-                            name=network['name'],
-                            ipv4_address=connected_networks[network['name']].get('IPAddress'),
-                            ipv6_address=connected_networks[network['name']].get('GlobalIPv6Address'),
-                            aliases=connected_networks[network['name']].get('Aliases'),
-                            links=connected_networks[network['name']].get('Links')
-                        )
-                    ))
+            elif self._is_network_different(network, existing_network):
+                different = True
+                differences.append(dict(
+                    parameter=network,
+                    container=dict(
+                        name=network['name'],
+                        ipv4_address=existing_network.get('IPAddress'),
+                        ipv6_address=existing_network.get('GlobalIPv6Address'),
+                        aliases=existing_network.get('Aliases'),
+                        links=existing_network.get('Links')
+                    )
+                ))
         return different, differences
+
+    @staticmethod
+    def _is_network_different(network, existing_network):
+        '''
+        Checks if an existing network is missing any expected options: links, aliases, ipv4, ipv6
+        '''
+        if network.get('ipv4_address') and network['ipv4_address'] != existing_network.get('IPAddress'):
+            return True
+        if network.get('ipv6_address') and network['ipv6_address'] != existing_network.get('GlobalIPv6Address'):
+            return True
+        if network.get('aliases'):
+            if not existing_network.get('Aliases'):
+                return True
+            for alias in network['aliases']:
+                if alias not in existing_network.get('Aliases', []):
+                    return True
+        if network.get('links'):
+            if not existing_network.get('Links'):
+                return True
+            for link, alias in network['links'].iteritems():
+                if ("%s:%s" % (link, alias)) not in existing_network.get('Links', []):
+                    return True
+        return False
 
     def has_extra_networks(self):
         '''
